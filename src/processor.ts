@@ -1,22 +1,33 @@
-import {lookupArchive} from "@subsquid/archive-registry"
+//import {lookupArchive} from "@subsquid/archive-registry"
 import * as ss58 from "@subsquid/ss58"
 import {BatchContext, BatchProcessorItem, SubstrateBatchProcessor} from "@subsquid/substrate-processor"
 import {Store, TypeormDatabase} from "@subsquid/typeorm-store"
 import {In} from "typeorm"
-import {Account, Transfer} from "./model"
-import {BalancesTransferEvent} from "./types/events"
-
+import {Account, Transfer, Token} from "./model"
+import {TokensTransferEvent} from "./types/events"
+import * as v1 from "./types/v1";
+import * as v2 from "./types/v2";
+import * as v3 from "./types/v3";
+// import * as v6 from "./types/v6";
+// import * as v10 from "./types/v10";
+// import * as v15 from "./types/v15";
+// import * as v17 from "./types/v17";
+// import { CurrencyId_Token as CurrencyId_TokenV6 } from "./types/v6";
+// import { CurrencyId_Token as CurrencyId_TokenV10 } from "./types/v10";
+// import { CurrencyId_Token as CurrencyId_TokenV15 } from "./types/v15";
+// import { CurrencyId_Token as CurrencyId_TokenV17 } from "./types/v17";
 
 const processor = new SubstrateBatchProcessor()
     .setBatchSize(500)
     .setDataSource({
         // Lookup archive by the network name in the Subsquid registry
-        archive: lookupArchive("kusama", {release: "FireSquid"})
+        //archive: lookupArchive("interlay", {release: "FireSquid"})
+        archive: 'https://interlay.archive.subsquid.io/graphql'
 
         // Use archive created by archive/docker-compose.yml
         // archive: 'http://localhost:8888/graphql'
     })
-    .addEvent('Balances.Transfer', {
+    .addEvent('Tokens.Transfer', {
         data: {
             event: {
                 args: true,
@@ -49,11 +60,11 @@ processor.run(new TypeormDatabase(), async ctx => {
     let transfers: Transfer[] = []
 
     for (let t of transfersData) {
-        let {id, blockNumber, timestamp, extrinsicHash, amount, fee} = t
+        let {id, blockNumber, timestamp, extrinsicHash, amount, fee, token, comment} = t
 
         let from = getAccount(accounts, t.from)
         let to = getAccount(accounts, t.to)
-
+        // @ts-ignore
         transfers.push(new Transfer({
             id,
             blockNumber,
@@ -62,7 +73,10 @@ processor.run(new TypeormDatabase(), async ctx => {
             from,
             to,
             amount,
-            fee
+            fee,
+            // @ts-ignore
+            token,
+            comment
         }))
     }
 
@@ -80,6 +94,8 @@ interface TransferEvent {
     to: string
     amount: bigint
     fee?: bigint
+    token: string
+    comment: string
 }
 
 
@@ -87,28 +103,43 @@ function getTransfers(ctx: Ctx): TransferEvent[] {
     let transfers: TransferEvent[] = []
     for (let block of ctx.blocks) {
         for (let item of block.items) {
-            if (item.name == "Balances.Transfer") {
-                let e = new BalancesTransferEvent(ctx, item.event)
-                let rec: {from: Uint8Array, to: Uint8Array, amount: bigint}
-                if (e.isV1020) {
-                    let [from, to, amount,] = e.asV1020
-                    rec = {from, to, amount}
-                } else if (e.isV1050) {
-                    let [from, to, amount] = e.asV1050
-                    rec = {from, to, amount}
+            if (item.name == "Tokens.Transfer") {
+                // @ts-ignore
+                let e = new TokensTransferEvent(ctx, item.event)
+                let version:String
+                let rec: {from: Uint8Array, to: Uint8Array, amount: bigint,
+                    currencyId:v1.CurrencyId|v2.CurrencyId|v3.CurrencyId}
+                if (e.isV1) {
+                    let [currencyId, from, to, amount] = e.asV1
+                    rec = {from, to, amount, currencyId}
+                    version = '1'
+                // } else if (e.isV2) {
+                //     let {currencyId, from, to, amount} = e.asV2
+                //     rec = {from, to, amount, currencyId}
+                //     version = '2'
                 } else {
-                    rec = e.asV9130
+                    // @ts-ignore
+                    rec = e.asV3
+                    version = '3'
                 }
-                transfers.push({
+                const single_transfer = {
                     id: item.event.id,
                     blockNumber: block.header.height,
                     timestamp: new Date(block.header.timestamp),
                     extrinsicHash: item.event.extrinsic?.hash,
-                    from: ss58.codec('kusama').encode(rec.from),
-                    to: ss58.codec('kusama').encode(rec.to),
+                    from: ss58.codec('interlay').encode(rec.from),
+                    to: ss58.codec('interlay').encode(rec.to),
                     amount: rec.amount,
-                    fee: item.event.extrinsic?.fee || 0n
-                })
+                    fee: item.event.extrinsic?.fee || 0n,
+                    // @ts-ignore
+                    token: Token[rec.currencyId.value.__kind],
+                    comment: `${JSON.stringify(version)}`
+                }
+                // @ts-ignore
+                if (rec.amount != 456621004566) {
+                    transfers.push(single_transfer)
+                    console.log(`Transfer: ${single_transfer.amount} ${single_transfer.token}`)
+                }
             }
         }
     }

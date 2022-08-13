@@ -5,6 +5,15 @@ type Account @entity {
   transfersFrom: [Transfer!] @derivedFrom(field: "from")
 }
 
+enum Token {
+    DOT
+    INTR
+    KSM
+    KINT
+    IBTC
+    KBTC
+}
+
 type Transfer @entity {
   id: ID!
   blockNumber: Int! @index
@@ -14,4 +23,6 @@ type Transfer @entity {
   to: Account!
   amount: BigInt! @index
   fee: BigInt! # fee is calculated at the best effort and may be zero for some old extrinsics
+  token: Token!
+  comment: String
 }

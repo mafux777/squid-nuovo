@@ -1,8 +1,8 @@
 {
   "outDir": "src/types",
-  "specVersions": "https://kusama.archive.subsquid.io/graphql",
+  "specVersions": "https://interlay.archive.subsquid.io/graphql",
   "events": [
-    "Balances.Transfer"
+    "Tokens.Transfer"
   ],
   "calls": [ 
   ],
